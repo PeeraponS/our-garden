@@ -2,6 +2,12 @@
 
 import { useState, useEffect, useCallback, useMemo } from "react";
 import { FlowerData } from "@/lib/garden";
+import { FLOWER_SVGS } from "@/lib/flowers";
+import {
+  buildTextMask,
+  generateFlowerPositionsFromMask,
+  assignSpeciesToPoints,
+} from "@/lib/hiddenMessage";
 
 // --- Time of day ---
 type TimeOfDay = "night" | "dawn" | "morning" | "day" | "sunset" | "dusk";
@@ -130,6 +136,14 @@ function GrassTexture({ color1, color2 }: { color1: string; color2: string }) {
 
 // Flower size — big enough to see clearly on all devices
 const FLOWER_SIZE = "clamp(22px, 5vw, 38px)";
+const HIDDEN_MESSAGE_LINES = ["LOVE U", "FOREVER", "CHERRY"];
+const HIDDEN_MESSAGE_SEED = 1337;
+const BASE_SPECIES = ["forgetmenot", "lily", "peony", "rose", "tulip", "sunflower"] as const;
+const LINE_SPECIES: string[][] = [
+  ["forgetmenot", "lily"],
+  ["peony", "rose"],
+  ["tulip", "peony"],
+];
 
 export default function Garden({
   flowers,
@@ -146,6 +160,46 @@ export default function Garden({
   const [timeOfDay, setTimeOfDay] = useState<TimeOfDay>("day");
   const [particles, setParticles] = useState<Particle[]>([]);
   const [isFilterOpen, setIsFilterOpen] = useState(false);
+  const [isHiddenMessage, setIsHiddenMessage] = useState(false);
+
+  const speciesVariants = useMemo(() => {
+    const map: Record<string, string[]> = {};
+    FLOWER_SVGS.forEach((svg) => {
+      const [species] = svg.split("-");
+      if (!map[species]) map[species] = [];
+      map[species].push(svg);
+    });
+    return map;
+  }, []);
+
+  const availableSpecies = useMemo(() => {
+    const set = new Set<string>(BASE_SPECIES);
+    flowers.forEach((f) => set.add(f.svg.split("-")[0]));
+    return Array.from(set).sort();
+  }, [flowers]);
+
+  const [typeVisibility, setTypeVisibility] = useState<Record<string, boolean>>(() => {
+    const initial: Record<string, boolean> = {};
+    const allSpecies = new Set<string>(BASE_SPECIES);
+    flowers.forEach((f) => allSpecies.add(f.svg.split("-")[0]));
+    Array.from(allSpecies).forEach((type) => {
+      initial[type] = true;
+    });
+    return initial;
+  });
+
+  useEffect(() => {
+    setTypeVisibility((prev) => {
+      let changed = false;
+      const next: Record<string, boolean> = {};
+      availableSpecies.forEach((type) => {
+        next[type] = prev[type] ?? true;
+        if (next[type] !== prev[type]) changed = true;
+      });
+      if (Object.keys(prev).length !== availableSpecies.length) changed = true;
+      return changed ? next : prev;
+    });
+  }, [availableSpecies]);
 
   useEffect(() => {
     const update = () => {
@@ -162,37 +216,6 @@ export default function Garden({
     setSelectedFlower((prev) => (prev?.id === f.id ? null : f));
   }, []);
 
-  const lastId = flowers.length - 1;
-  const isNight = timeOfDay === "night";
-  const isDusk = timeOfDay === "dusk";
-  const flowerTypes = useMemo(() => {
-    const unique = new Set<string>();
-    flowers.forEach((f) => unique.add(f.svg.split("-")[0]));
-    return Array.from(unique).sort();
-  }, [flowers]);
-
-  const [typeVisibility, setTypeVisibility] = useState<Record<string, boolean>>(() => {
-    const initial: Record<string, boolean> = {};
-    flowers.forEach((f) => {
-      initial[f.svg.split("-")[0]] = true;
-    });
-    return initial;
-  });
-
-  useEffect(() => {
-    setTypeVisibility((prev) => {
-      const next: Record<string, boolean> = {};
-      let changed = false;
-      flowerTypes.forEach((type) => {
-        const current = prev[type] ?? true;
-        next[type] = current;
-        if (current !== prev[type]) changed = true;
-      });
-      if (Object.keys(prev).length !== flowerTypes.length) changed = true;
-      return changed ? next : prev;
-    });
-  }, [flowerTypes]);
-
   const toggleFlowerType = useCallback((type: string) => {
     setTypeVisibility((prev) => ({
       ...prev,
@@ -202,11 +225,67 @@ export default function Garden({
 
   const resetFlowerTypes = useCallback(() => {
     const resetMap: Record<string, boolean> = {};
-    flowerTypes.forEach((type) => {
+    availableSpecies.forEach((type) => {
       resetMap[type] = true;
     });
     setTypeVisibility(resetMap);
-  }, [flowerTypes]);
+  }, [availableSpecies]);
+
+  const enabledSpecies = useMemo(
+    () => availableSpecies.filter((type) => typeVisibility[type]),
+    [availableSpecies, typeVisibility]
+  );
+
+  const messageMaskResult = useMemo(() => buildTextMask(HIDDEN_MESSAGE_LINES), []);
+
+  const hiddenSpawnPoints = useMemo(
+    () =>
+      generateFlowerPositionsFromMask(
+        messageMaskResult,
+        { width: 70, height: 60, offsetY: 18, seed: HIDDEN_MESSAGE_SEED, jitter: 0.2 },
+        1
+      ),
+    [messageMaskResult]
+  );
+
+  const assignedHiddenPoints = useMemo(
+    () => assignSpeciesToPoints(hiddenSpawnPoints, messageMaskResult, enabledSpecies, LINE_SPECIES),
+    [hiddenSpawnPoints, messageMaskResult, enabledSpecies]
+  );
+
+  const hiddenFlowers = useMemo(() => {
+    if (!assignedHiddenPoints.length) return [];
+    const fallbackVariants =
+      speciesVariants.rose ?? FLOWER_SVGS.filter((svg) => svg.startsWith("rose-")) ?? FLOWER_SVGS;
+    let hiddenId = 0;
+    return assignedHiddenPoints.map((point, index) => {
+      const species = point.species ?? "rose";
+      const variants = speciesVariants[species] ?? fallbackVariants;
+      return {
+        id: -(++hiddenId),
+        x: point.x,
+        y: point.y,
+        svg: variants[index % variants.length] ?? variants[0],
+        scale: 1.05,
+        rotation: 0,
+        zIndex: 200 + point.row,
+        dayNumber: 0,
+        date: "2025-02-14",
+      } as FlowerData;
+    });
+  }, [assignedHiddenPoints, speciesVariants]);
+
+  useEffect(() => {
+    setSelectedFlower(null);
+  }, [isHiddenMessage]);
+
+  const renderFlowers = useMemo(
+    () => [...flowers, ...hiddenFlowers],
+    [flowers, hiddenFlowers]
+  );
+  const newestFlowerId = flowers[flowers.length - 1]?.id ?? null;
+  const isNight = timeOfDay === "night";
+  const isDusk = timeOfDay === "dusk";
 
   return (
     <div
@@ -282,13 +361,17 @@ export default function Garden({
       </div>
 
       {/* Flowers */}
-      {flowers.map((f) => {
+      {renderFlowers.map((f) => {
         const isSelected = selectedFlower?.id === f.id;
         // Deterministic sway: use flower id to pick animation delay & duration
         const swayDelay = (f.id * 0.37) % 4;
         const swayDuration = 3 + (f.id % 5) * 0.5;
         const typeName = f.svg.split("-")[0];
         const isEnabled = typeVisibility[typeName] ?? true;
+        const isHiddenPixel = f.id < 0;
+        const fadeByToggle = !isEnabled;
+        const fadeByReveal = isHiddenMessage && !isHiddenPixel;
+        const shouldFade = fadeByToggle || fadeByReveal;
         const filterParts: string[] = [];
         if (isNight) filterParts.push("brightness(0.45) saturate(0.6)");
         else if (isDusk) filterParts.push("brightness(0.75)");
@@ -298,7 +381,9 @@ export default function Garden({
             key={f.id}
             onClick={() => handleFlowerClick(f)}
             className={`absolute border-0 bg-transparent p-0 cursor-pointer ${
-              f.id === lastId ? "animate-newest" : "animate-sway"
+              !isHiddenPixel && newestFlowerId !== null && f.id === newestFlowerId
+                ? "animate-newest"
+                : "animate-sway"
             }`}
             style={{
               left: `${f.x}%`,
@@ -308,9 +393,9 @@ export default function Garden({
               transform: `translate(-50%, -50%) scale(${isSelected ? f.scale * 2.2 : f.scale}) rotate(${f.rotation}deg)`,
               zIndex: isSelected ? 1000 : f.zIndex,
               filter: filterParts.length ? filterParts.join(" ") : "none",
-              transition: "transform 0.3s ease, filter 0.35s ease, opacity 0.35s ease",
-              opacity: isEnabled ? 1 : 0.15,
-              pointerEvents: isEnabled ? "auto" : "none",
+              transition: "left 0.4s ease, top 0.4s ease, transform 0.3s ease, filter 0.35s ease, opacity 0.35s ease",
+              opacity: shouldFade ? 0.15 : 1,
+              pointerEvents: fadeByToggle ? "none" : "auto",
               animationDelay: `${swayDelay}s`,
               animationDuration: `${swayDuration}s`,
             }}
@@ -353,6 +438,39 @@ export default function Garden({
       <div className="pointer-events-none absolute bottom-4 right-4 z-[1002] flex flex-col items-end gap-3">
         {isFilterOpen && (
           <div className="filter-menu pointer-events-auto w-60 rounded-2xl bg-zinc-900/90 p-3 text-white shadow-2xl backdrop-blur">
+            <div className="mb-3 rounded-2xl bg-white/5 px-3 py-2">
+              <div className="flex items-center justify-between text-sm font-semibold">
+                <span>Hidden Message</span>
+                <button
+                  type="button"
+                  className={`flex items-center gap-2 text-[11px] uppercase tracking-[0.3em] transition ${
+                    isHiddenMessage ? "text-emerald-300" : "text-white/40"
+                  }`}
+                  aria-pressed={isHiddenMessage}
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    setIsHiddenMessage((prev) => !prev);
+                  }}
+                >
+                  {isHiddenMessage ? "On" : "Off"}
+                  <span
+                    className={`inline-flex h-4 w-7 items-center rounded-full border border-white/20 px-0.5 transition ${
+                      isHiddenMessage ? "bg-emerald-400/80" : "bg-zinc-700"
+                    }`}
+                  >
+                    <span
+                      className={`block h-3 w-3 rounded-full bg-white transition ${
+                        isHiddenMessage ? "translate-x-3" : "translate-x-0"
+                      }`}
+                    />
+                  </span>
+                </button>
+              </div>
+              <p className="mt-1 text-[11px] text-white/60">
+                Dim background blooms to reveal LOVE U • FOREVER • CHERRY • ❤
+              </p>
+            </div>
+
             <div className="mb-2 flex items-center justify-between text-xs uppercase tracking-[0.2em] text-white/60">
               <span>Flowers</span>
               <button
@@ -367,7 +485,7 @@ export default function Garden({
               </button>
             </div>
             <ul className="space-y-1">
-              {flowerTypes.map((type) => {
+              {availableSpecies.map((type) => {
                 const enabled = typeVisibility[type] ?? true;
                 const label = type.charAt(0).toUpperCase() + type.slice(1);
                 return (
@@ -409,7 +527,9 @@ export default function Garden({
 
         <button
           type="button"
-          className="pointer-events-auto flex h-11 w-11 items-center justify-center rounded-full bg-zinc-900/90 text-sm font-semibold text-white shadow-lg backdrop-blur focus-visible:outline focus-visible:outline-2 focus-visible:outline-white"
+          className={`pointer-events-auto flex h-11 w-11 items-center justify-center rounded-full text-sm font-semibold shadow-lg backdrop-blur focus-visible:outline focus-visible:outline-2 focus-visible:outline-white transition ${
+            isHiddenMessage ? "bg-emerald-400 text-emerald-950" : "bg-zinc-900/90 text-white"
+          }`}
           aria-label="Toggle flower filter menu"
           aria-expanded={isFilterOpen}
           onClick={(event) => {
