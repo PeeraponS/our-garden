@@ -8,6 +8,7 @@ import {
     generateFlowerPositionsFromMask,
     assignSpeciesToPoints,
 } from '@/lib/hiddenMessage';
+import { useAmbientAudio } from '@/lib/useAmbientAudio';
 
 // --- Time of day ---
 type TimeOfDay = 'night' | 'dawn' | 'morning' | 'day' | 'sunset' | 'dusk';
@@ -195,6 +196,7 @@ export default function Garden({
     const [isFilterOpen, setIsFilterOpen] = useState(false);
     const [isHiddenMessage, setIsHiddenMessage] = useState(false);
     const countdown = useCountdown(endDate, isPastValentine);
+    useAmbientAudio(timeOfDay);
     const isDev = process.env.NODE_ENV === 'development';
     const [isCountdownHintVisible, setIsCountdownHintVisible] = useState(false);
     const countdownHintTimeoutRef = useRef<ReturnType<
