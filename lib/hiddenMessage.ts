@@ -1,26 +1,23 @@
 import { mulberry32 } from "./random";
 
 const PIXEL_FONT: Record<string, string[]> = {
-  " ": ["00000", "00000", "00000", "00000", "00000", "00000", "00000"],
-  A: ["01110", "10001", "10001", "11111", "10001", "10001", "10001"],
-  B: ["11110", "10001", "11110", "10001", "10001", "10001", "11110"],
-  C: ["01110", "10001", "10000", "10000", "10000", "10001", "01110"],
-  E: ["11111", "10000", "11110", "10000", "10000", "10000", "11111"],
-  F: ["11111", "10000", "11110", "10000", "10000", "10000", "10000"],
-  H: ["10001", "10001", "11111", "10001", "10001", "10001", "10001"],
-  L: ["10000", "10000", "10000", "10000", "10000", "10000", "11111"],
-  O: ["01110", "10001", "10001", "10001", "10001", "10001", "01110"],
-  R: ["11110", "10001", "11110", "10100", "10010", "10001", "10001"],
-  U: ["10001", "10001", "10001", "10001", "10001", "10001", "01110"],
-  V: ["10001", "10001", "10001", "10001", "10001", "01010", "00100"],
-  Y: ["10001", "01010", "00100", "00100", "00100", "00100", "00100"],
-  "❤": ["01110", "11111", "11111", "11111", "01110", "00100", "00000"],
+  " ": ["000000", "000000", "000000", "000000", "000000", "000000", "000000"],
+  A: ["001100", "010010", "100001", "111111", "100001", "100001", "100001"],
+  B: ["111110", "100001", "111110", "100001", "100001", "100001", "111110"],
+  C: ["001111", "010000", "100000", "100000", "100000", "010000", "001111"],
+  E: ["111111", "100000", "111110", "100000", "100000", "100000", "111111"],
+  F: ["111111", "100000", "111110", "100000", "100000", "100000", "100000"],
+  H: ["100001", "100001", "111111", "100001", "100001", "100001", "100001"],
+  L: ["100000", "100000", "100000", "100000", "100000", "100000", "111111"],
+  O: ["011110", "100001", "100001", "100001", "100001", "100001", "011110"],
+  R: ["111110", "100001", "111110", "101000", "100100", "100010", "100001"],
+  U: ["100001", "100001", "100001", "100001", "100001", "100001", "011110"],
+  V: ["100001", "100001", "100001", "100001", "010010", "010010", "001100"],
+  Y: ["100001", "010010", "001100", "001100", "001100", "001100", "001100"],
 };
 
-export type TextMask = boolean[][];
-
 export interface TextMaskResult {
-  mask: TextMask;
+  mask: boolean[][];
   letterMap: number[][];
   letters: string[];
   letterMeta: { lineIndex: number; letterIndex: number; char: string }[];
@@ -47,15 +44,33 @@ export interface SpawnPoint {
   species?: string;
 }
 
-export function buildTextMask(lines: string[]): TextMaskResult {
+export interface TextMaskOptions {
+  charSpacing?: number;
+  lineSpacing?: number;
+  pixelScaleX?: number;
+  pixelScaleY?: number;
+}
+
+export function buildTextMask(
+  lines: string[],
+  optionsOrSpacing: number | TextMaskOptions = 2,
+): TextMaskResult {
+  const options: TextMaskOptions =
+    typeof optionsOrSpacing === "number" ? { charSpacing: optionsOrSpacing } : optionsOrSpacing ?? {};
+  const charSpacing = options.charSpacing ?? 2;
+  const lineSpacing = options.lineSpacing ?? 2;
+  const pixelScaleX = Math.max(1, Math.floor(options.pixelScaleX ?? 1));
+  const pixelScaleY = Math.max(1, Math.floor(options.pixelScaleY ?? 1));
+  const sampleGlyph =
+    PIXEL_FONT[Object.keys(PIXEL_FONT).find((key) => key.trim().length) ?? " "] ?? PIXEL_FONT[" "];
+  const baseCharWidth = sampleGlyph[0]?.length ?? 0;
+  const baseCharHeight = sampleGlyph.length;
+  const scaledCharWidth = baseCharWidth * pixelScaleX;
+  const scaledCharHeight = baseCharHeight * pixelScaleY;
   const normalized = lines.map((line) => line.toUpperCase());
-  const charWidth = 5;
-  const charHeight = 7;
-  const charSpacing = 1;
-  const lineSpacing = 2;
   const maxLineLength = Math.max(...normalized.map((line) => Math.max(line.length, 1)));
-  const cols = maxLineLength * (charWidth + charSpacing) - charSpacing;
-  const rows = normalized.length * charHeight + Math.max(normalized.length - 1, 0) * lineSpacing;
+  const cols = maxLineLength * (scaledCharWidth + charSpacing) - charSpacing;
+  const rows = normalized.length * scaledCharHeight + Math.max(normalized.length - 1, 0) * lineSpacing;
   const mask: boolean[][] = Array.from({ length: rows }, () => Array(cols).fill(false));
   const letterMap: number[][] = Array.from({ length: rows }, () => Array(cols).fill(-1));
   const letters: string[] = [];
@@ -63,9 +78,9 @@ export function buildTextMask(lines: string[]): TextMaskResult {
   let letterCounter = 0;
 
   normalized.forEach((line, lineIndex) => {
-    const startRow = lineIndex * (charHeight + lineSpacing);
+    const startRow = lineIndex * (scaledCharHeight + lineSpacing);
     const lineLength = Math.max(line.length, 1);
-    const lineWidth = lineLength * (charWidth + charSpacing) - charSpacing;
+    const lineWidth = lineLength * (scaledCharWidth + charSpacing) - charSpacing;
     let colCursor = Math.floor((cols - lineWidth) / 2);
     let charPosition = 0;
     for (const ch of line) {
@@ -75,19 +90,24 @@ export function buildTextMask(lines: string[]): TextMaskResult {
         letters.push(ch);
         letterMeta.push({ lineIndex, letterIndex: charPosition, char: ch });
       }
-      for (let r = 0; r < charHeight; r++) {
-        for (let c = 0; c < charWidth; c++) {
-          if (glyph[r][c] === "1") {
-            const row = startRow + r;
-            const col = colCursor + c;
-            if (row < rows && col < cols) {
-              mask[row][col] = true;
-              letterMap[row][col] = currentIndex;
+      for (let r = 0; r < baseCharHeight; r++) {
+        const glyphRow = glyph[r];
+        if (!glyphRow) continue;
+        for (let c = 0; c < baseCharWidth; c++) {
+          if (glyphRow[c] !== "1") continue;
+          for (let yScale = 0; yScale < pixelScaleY; yScale++) {
+            for (let xScale = 0; xScale < pixelScaleX; xScale++) {
+              const row = startRow + r * pixelScaleY + yScale;
+              const col = colCursor + c * pixelScaleX + xScale;
+              if (row < rows && col < cols) {
+                mask[row][col] = true;
+                letterMap[row][col] = currentIndex;
+              }
             }
           }
         }
       }
-      colCursor += charWidth + charSpacing;
+      colCursor += scaledCharWidth + charSpacing;
       charPosition += 1;
     }
   });
@@ -98,7 +118,7 @@ export function buildTextMask(lines: string[]): TextMaskResult {
 export function generateFlowerPositionsFromMask(
   maskResult: TextMaskResult,
   bounds: MaskBounds,
-  density: number
+  density: number,
 ): SpawnPoint[] {
   const { mask, letterMap, letterMeta } = maskResult;
   const rows = mask.length;
@@ -117,7 +137,12 @@ export function generateFlowerPositionsFromMask(
   mask.forEach((rowVals, row) => {
     rowVals.forEach((isOn, col) => {
       if (!isOn) return;
-      for (let d = 0; d < density; d++) {
+      const baseCopies = Math.floor(density);
+      const fractional = Math.max(0, Math.min(1, density - baseCopies));
+      const extra = fractional > 0 && rng() < fractional ? 1 : 0;
+      const totalCopies = baseCopies + extra;
+      if (totalCopies <= 0) return;
+      for (let d = 0; d < totalCopies; d++) {
         const jx = (rng() - 0.5) * jitter;
         const jy = (rng() - 0.5) * jitter;
         const letterIndex = letterMap[row]?.[col] ?? -1;
@@ -145,22 +170,46 @@ export function assignSpeciesToPoints(
   points: SpawnPoint[],
   maskResult: TextMaskResult,
   enabledSpecies: string[],
-  lineSpecies: string[][]
+  lineSpecies: string[][],
 ): SpawnPoint[] {
-  const fallbackPool = enabledSpecies.length ? enabledSpecies : DEFAULT_SPECIES;
+  const basePool = enabledSpecies.length ? enabledSpecies : DEFAULT_SPECIES;
+  const sanitizedFallback = basePool.filter((species) => species !== "sunflower");
+  const fallbackPool = sanitizedFallback.length ? sanitizedFallback : basePool;
   if (!fallbackPool.length) return points;
 
-  const letterSpecies: string[] = [];
-  maskResult.letterMeta.forEach((meta, idx) => {
-    const pair = lineSpecies[meta.lineIndex] ?? fallbackPool;
-    const filtered = pair.filter((species) => fallbackPool.includes(species));
-    const pool = filtered.length ? filtered : fallbackPool;
-    letterSpecies[idx] = pool[meta.letterIndex % pool.length];
-  });
+  const letterCounters = new Map<number, number>();
+  const letterStartIndex = new Map<number, number>();
+  const SPECIES_PER_LETTER = 3;
 
   return points.map((point, idx) => {
+    const counter = letterCounters.get(point.letterIndex) ?? 0;
+    letterCounters.set(point.letterIndex, counter + 1);
+
+    const meta = maskResult.letterMeta[point.letterIndex];
+    const lineList = meta ? lineSpecies[meta.lineIndex] ?? fallbackPool : fallbackPool;
+    const filteredList = lineList
+      .filter((species) => species !== "sunflower")
+      .filter((species) => fallbackPool.includes(species));
+    const activePool = filteredList.length ? filteredList : fallbackPool;
+
+    let startIndex = letterStartIndex.get(point.letterIndex);
+    if (startIndex === undefined) {
+      startIndex = meta
+        ? meta.letterIndex % activePool.length
+        : idx % activePool.length;
+      letterStartIndex.set(point.letterIndex, startIndex);
+    }
+
+    const perLetterPool =
+      activePool.length >= SPECIES_PER_LETTER
+        ? Array.from({ length: SPECIES_PER_LETTER }, (_, i) => activePool[(startIndex! + i) % activePool.length])
+        : activePool;
+
     const species =
-      letterSpecies[point.letterIndex] ?? fallbackPool[idx % fallbackPool.length];
+      perLetterPool[counter % perLetterPool.length] ??
+      activePool[counter % activePool.length] ??
+      fallbackPool[idx % fallbackPool.length];
+
     return { ...point, species };
   });
 }
