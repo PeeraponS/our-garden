@@ -20,6 +20,30 @@ body {
   overscroll-behavior: none;
 }
 
+@keyframes filter-menu-pop {
+  0% {
+    opacity: 0;
+    transform: translateY(18px) scale(0.94);
+    filter: blur(2px);
+  }
+  70% {
+    opacity: 1;
+    transform: translateY(-6px) scale(1.02);
+    filter: blur(0);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+    filter: blur(0);
+  }
+}
+
+.filter-menu {
+  animation: filter-menu-pop 0.35s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  transform-origin: bottom right;
+  will-change: transform, opacity, filter;
+}
+
 @keyframes twinkle {
   0%, 100% { opacity: 0.2; }
   50% { opacity: 1; }

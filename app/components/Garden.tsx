@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import { FlowerData } from "@/lib/garden";
 
 // --- Time of day ---
@@ -145,7 +145,7 @@ export default function Garden({
   const [selectedFlower, setSelectedFlower] = useState<FlowerData | null>(null);
   const [timeOfDay, setTimeOfDay] = useState<TimeOfDay>("day");
   const [particles, setParticles] = useState<Particle[]>([]);
-  const countdown = useCountdown(endDate, isPastValentine);
+  const [isFilterOpen, setIsFilterOpen] = useState(false);
 
   useEffect(() => {
     const update = () => {
@@ -165,6 +165,48 @@ export default function Garden({
   const lastId = flowers.length - 1;
   const isNight = timeOfDay === "night";
   const isDusk = timeOfDay === "dusk";
+  const flowerTypes = useMemo(() => {
+    const unique = new Set<string>();
+    flowers.forEach((f) => unique.add(f.svg.split("-")[0]));
+    return Array.from(unique).sort();
+  }, [flowers]);
+
+  const [typeVisibility, setTypeVisibility] = useState<Record<string, boolean>>(() => {
+    const initial: Record<string, boolean> = {};
+    flowers.forEach((f) => {
+      initial[f.svg.split("-")[0]] = true;
+    });
+    return initial;
+  });
+
+  useEffect(() => {
+    setTypeVisibility((prev) => {
+      const next: Record<string, boolean> = {};
+      let changed = false;
+      flowerTypes.forEach((type) => {
+        const current = prev[type] ?? true;
+        next[type] = current;
+        if (current !== prev[type]) changed = true;
+      });
+      if (Object.keys(prev).length !== flowerTypes.length) changed = true;
+      return changed ? next : prev;
+    });
+  }, [flowerTypes]);
+
+  const toggleFlowerType = useCallback((type: string) => {
+    setTypeVisibility((prev) => ({
+      ...prev,
+      [type]: !(prev[type] ?? true),
+    }));
+  }, []);
+
+  const resetFlowerTypes = useCallback(() => {
+    const resetMap: Record<string, boolean> = {};
+    flowerTypes.forEach((type) => {
+      resetMap[type] = true;
+    });
+    setTypeVisibility(resetMap);
+  }, [flowerTypes]);
 
   return (
     <div
@@ -176,7 +218,10 @@ export default function Garden({
         paddingBottom: "env(safe-area-inset-bottom)",
       }}
       onClick={(e) => {
-        if (e.target === e.currentTarget) setSelectedFlower(null);
+        if (e.target === e.currentTarget) {
+          setSelectedFlower(null);
+          setIsFilterOpen(false);
+        }
       }}
     >
       {/* Grass texture */}
@@ -242,6 +287,11 @@ export default function Garden({
         // Deterministic sway: use flower id to pick animation delay & duration
         const swayDelay = (f.id * 0.37) % 4;
         const swayDuration = 3 + (f.id % 5) * 0.5;
+        const typeName = f.svg.split("-")[0];
+        const isEnabled = typeVisibility[typeName] ?? true;
+        const filterParts: string[] = [];
+        if (isNight) filterParts.push("brightness(0.45) saturate(0.6)");
+        else if (isDusk) filterParts.push("brightness(0.75)");
 
         return (
           <button
@@ -257,8 +307,10 @@ export default function Garden({
               height: FLOWER_SIZE,
               transform: `translate(-50%, -50%) scale(${isSelected ? f.scale * 2.2 : f.scale}) rotate(${f.rotation}deg)`,
               zIndex: isSelected ? 1000 : f.zIndex,
-              filter: isNight ? "brightness(0.45) saturate(0.6)" : isDusk ? "brightness(0.75)" : "none",
-              transition: "transform 0.3s ease, filter 3s ease",
+              filter: filterParts.length ? filterParts.join(" ") : "none",
+              transition: "transform 0.3s ease, filter 0.35s ease, opacity 0.35s ease",
+              opacity: isEnabled ? 1 : 0.15,
+              pointerEvents: isEnabled ? "auto" : "none",
               animationDelay: `${swayDelay}s`,
               animationDuration: `${swayDuration}s`,
             }}
@@ -295,50 +347,149 @@ export default function Garden({
         </div>
       )}
 
-      {/* Center overlay */}
-      <div className="pointer-events-none absolute inset-0 z-[999] flex items-center justify-center">
-        <div className="pointer-events-auto w-[80vw] max-w-[300px] rounded-2xl bg-white/25 px-5 py-4 text-center shadow-xl backdrop-blur-md md:max-w-[380px] md:px-10 md:py-7">
-          <h1 className="font-sans text-[7vw] font-bold leading-tight tracking-tight text-white drop-shadow-lg min-[390px]:text-3xl md:text-5xl">
-            Our Garden
-          </h1>
-          <p className="mt-1 text-[3.5vw] text-white/80 drop-shadow min-[390px]:text-sm md:mt-2 md:text-xl">
-            {total.toLocaleString()} flowers planted
-          </p>
+      <FloatingPanel total={total} endDate={endDate} isPastValentine={isPastValentine} />
 
-          {/* Countdown */}
-          {countdown && (
-            <div className="mt-3 border-t border-white/20 pt-3">
-              <p className="mb-1.5 text-[2.5vw] uppercase tracking-widest text-white/60 min-[390px]:text-[10px] md:text-xs">
-                Valentine&apos;s Day
-              </p>
-              <div className="flex items-center justify-center gap-3 md:gap-4">
-                {[
-                  { value: countdown.days, label: "days" },
-                  { value: countdown.hours, label: "hrs" },
-                  { value: countdown.minutes, label: "min" },
-                  { value: countdown.seconds, label: "sec" },
-                ].map((item) => (
-                  <div key={item.label} className="flex flex-col items-center">
-                    <span className="font-mono text-[5vw] font-bold tabular-nums text-white min-[390px]:text-xl md:text-3xl">
-                      {String(item.value).padStart(2, "0")}
-                    </span>
-                    <span className="text-[2vw] uppercase text-white/50 min-[390px]:text-[9px] md:text-[11px]">
-                      {item.label}
-                    </span>
-                  </div>
-                ))}
-              </div>
+      {/* Flower type filter */}
+      <div className="pointer-events-none absolute bottom-4 right-4 z-[1002] flex flex-col items-end gap-3">
+        {isFilterOpen && (
+          <div className="filter-menu pointer-events-auto w-60 rounded-2xl bg-zinc-900/90 p-3 text-white shadow-2xl backdrop-blur">
+            <div className="mb-2 flex items-center justify-between text-xs uppercase tracking-[0.2em] text-white/60">
+              <span>Flowers</span>
+              <button
+                type="button"
+                className="text-[10px] font-semibold tracking-wide text-emerald-300 hover:text-emerald-200"
+                onClick={(event) => {
+                  event.stopPropagation();
+                  resetFlowerTypes();
+                }}
+              >
+                Reset
+              </button>
             </div>
-          )}
+            <ul className="space-y-1">
+              {flowerTypes.map((type) => {
+                const enabled = typeVisibility[type] ?? true;
+                const label = type.charAt(0).toUpperCase() + type.slice(1);
+                return (
+                  <li key={type}>
+                    <button
+                      type="button"
+                      className="flex w-full items-center justify-between rounded-xl px-2 py-2 text-sm transition hover:bg-white/5"
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        toggleFlowerType(type);
+                      }}
+                    >
+                      <span>{label}</span>
+                      <span
+                        className={`flex items-center gap-2 text-[11px] uppercase tracking-[0.3em] ${
+                          enabled ? "text-emerald-300" : "text-white/40"
+                        }`}
+                      >
+                        {enabled ? "On" : "Off"}
+                        <span
+                          className={`inline-flex h-4 w-7 items-center rounded-full border border-white/20 px-0.5 transition ${
+                            enabled ? "bg-emerald-400/80" : "bg-zinc-700"
+                          }`}
+                        >
+                          <span
+                            className={`block h-3 w-3 rounded-full bg-white transition ${
+                              enabled ? "translate-x-3" : "translate-x-0"
+                            }`}
+                          />
+                        </span>
+                      </span>
+                    </button>
+                  </li>
+                );
+              })}
+            </ul>
+          </div>
+        )}
 
-          {/* Past valentine message */}
-          {isPastValentine && (
-            <p className="mt-3 border-t border-white/20 pt-3 text-[3.5vw] text-pink-200 min-[390px]:text-sm md:text-lg">
-              Happy Valentine&apos;s Day
-            </p>
-          )}
-        </div>
+        <button
+          type="button"
+          className="pointer-events-auto flex h-11 w-11 items-center justify-center rounded-full bg-zinc-900/90 text-sm font-semibold text-white shadow-lg backdrop-blur focus-visible:outline focus-visible:outline-2 focus-visible:outline-white"
+          aria-label="Toggle flower filter menu"
+          aria-expanded={isFilterOpen}
+          onClick={(event) => {
+            event.stopPropagation();
+            setIsFilterOpen((prev) => !prev);
+          }}
+        >
+          N
+        </button>
       </div>
+    </div>
+  );
+}
+
+function FloatingPanel({
+  total,
+  endDate,
+  isPastValentine,
+}: {
+  total: number;
+  endDate: string;
+  isPastValentine: boolean;
+}) {
+  const countdown = useCountdown(endDate, isPastValentine);
+  const [isHidden, setIsHidden] = useState(false);
+
+  if (isHidden) {
+    return null;
+  }
+
+  return (
+    <div className="pointer-events-none absolute inset-0 z-[999] flex items-center justify-center">
+      <button
+        type="button"
+        className="pointer-events-auto w-[80vw] max-w-[300px] rounded-2xl bg-white/30 px-5 py-4 text-center text-white shadow-xl backdrop-blur-md transition hover:bg-white/40 focus-visible:outline focus-visible:outline-2 focus-visible:outline-white/70 min-[390px]:w-[300px] md:max-w-[380px] md:px-10 md:py-7"
+        onClick={() => setIsHidden(true)}
+        aria-label="Hide Our Garden panel"
+      >
+        <h1 className="font-sans text-[7vw] font-bold leading-tight tracking-tight text-white drop-shadow-lg min-[390px]:text-3xl md:text-5xl">
+          Our Garden
+        </h1>
+        <p className="mt-1 text-[3.5vw] text-white/80 drop-shadow min-[390px]:text-sm md:mt-2 md:text-xl">
+          {total.toLocaleString()} flowers planted
+        </p>
+
+        {countdown && (
+          <div className="mt-3 border-t border-white/20 pt-3">
+            <p className="mb-1.5 text-[2.5vw] uppercase tracking-widest text-white/60 min-[390px]:text-[10px] md:text-xs">
+              Valentine&apos;s Day
+            </p>
+            <div className="flex items-center justify-center gap-3 md:gap-4">
+              {[
+                { value: countdown.days, label: "days" },
+                { value: countdown.hours, label: "hrs" },
+                { value: countdown.minutes, label: "min" },
+                { value: countdown.seconds, label: "sec" },
+              ].map((item) => (
+                <div key={item.label} className="flex flex-col items-center">
+                  <span className="font-mono text-[5vw] font-bold tabular-nums text-white min-[390px]:text-xl md:text-3xl">
+                    {String(item.value).padStart(2, "0")}
+                  </span>
+                  <span className="text-[2vw] uppercase text-white/50 min-[390px]:text-[9px] md:text-[11px]">
+                    {item.label}
+                  </span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {isPastValentine && (
+          <p className="mt-3 border-t border-white/20 pt-3 text-[3.5vw] text-pink-200 min-[390px]:text-sm md:text-lg">
+            Happy Valentine&apos;s Day
+          </p>
+        )}
+
+        <p className="mt-3 text-[2.5vw] uppercase tracking-widest text-white/60 min-[390px]:text-[10px] md:text-xs">
+          Tap to hide — refresh to show again
+        </p>
+      </button>
     </div>
   );
 }
