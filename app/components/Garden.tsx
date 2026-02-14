@@ -2,12 +2,7 @@
 
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { FlowerData } from '@/lib/garden';
-import { FLOWER_SVGS } from '@/lib/flowers';
-import {
-    buildTextMask,
-    generateFlowerPositionsFromMask,
-    assignSpeciesToPoints,
-} from '@/lib/hiddenMessage';
+import { TEXT_SETS } from '@/lib/gardenConfig';
 import { useAmbientAudio } from '@/lib/useAmbientAudio';
 
 // --- Time of day ---
@@ -180,8 +175,6 @@ function GrassTexture({ color1, color2 }: { color1: string; color2: string }) {
 
 // Flower size — big enough to see clearly on all devices
 const FLOWER_SIZE = 'clamp(22px, 5vw, 38px)';
-const HIDDEN_MESSAGE_LINES = ['LOVE U', 'FOREVER', 'CHERRY'];
-const HIDDEN_MESSAGE_SEED = 1337;
 const BASE_SPECIES = [
     'forgetmenot',
     'lily',
@@ -190,11 +183,6 @@ const BASE_SPECIES = [
     'tulip',
     'sunflower',
 ] as const;
-const LINE_SPECIES: string[][] = [
-    ['peony', 'lily', 'forgetmenot', 'rose'],
-    ['forgetmenot', 'rose', 'sunflower', 'tulip'],
-    ['tulip', 'peony', 'lily', 'sunflower'],
-];
 
 export default function Garden({
     flowers,
@@ -209,18 +197,8 @@ export default function Garden({
     const [timeOfDay, setTimeOfDay] = useState<TimeOfDay>('day');
     const [particles, setParticles] = useState<Particle[]>([]);
     const [isFilterOpen, setIsFilterOpen] = useState(false);
-    const [isHiddenMessage, setIsHiddenMessage] = useState(false);
+    const [activeTextSet, setActiveTextSet] = useState<string | null>(null);
     useAmbientAudio(timeOfDay);
-
-    const speciesVariants = useMemo(() => {
-        const map: Record<string, string[]> = {};
-        FLOWER_SVGS.forEach((svg) => {
-            const [species] = svg.split('-');
-            if (!map[species]) map[species] = [];
-            map[species].push(svg);
-        });
-        return map;
-    }, []);
 
     const availableSpecies = useMemo(() => {
         const set = new Set<string>(BASE_SPECIES);
@@ -284,79 +262,18 @@ export default function Garden({
         setTypeVisibility(resetMap);
     }, [availableSpecies]);
 
-    const enabledSpecies = useMemo(
-        () => availableSpecies.filter((type) => typeVisibility[type]),
-        [availableSpecies, typeVisibility],
-    );
-
-    const messageMaskResult = useMemo(
+    // Discover which text sets have at least 1 flower planted
+    const discoveredTextSets = useMemo(
         () =>
-            buildTextMask(HIDDEN_MESSAGE_LINES, {
-                charSpacing: 8,
-                pixelScaleX: 2,
-            }),
-        [],
-    );
-
-    const hiddenSpawnPoints = useMemo(
-        () =>
-            generateFlowerPositionsFromMask(
-                messageMaskResult,
-                {
-                    width: 70,
-                    height: 60,
-                    offsetY: 18,
-                    seed: HIDDEN_MESSAGE_SEED,
-                    jitter: 0.2,
-                },
-                0.55,
+            TEXT_SETS.filter((ts) =>
+                flowers.some((f) => f.textSetId === ts.id),
             ),
-        [messageMaskResult],
+        [flowers],
     );
-
-    const assignedHiddenPoints = useMemo(
-        () =>
-            assignSpeciesToPoints(
-                hiddenSpawnPoints,
-                messageMaskResult,
-                enabledSpecies,
-                LINE_SPECIES,
-            ),
-        [hiddenSpawnPoints, messageMaskResult, enabledSpecies],
-    );
-
-    const hiddenFlowers = useMemo(() => {
-        if (!assignedHiddenPoints.length) return [];
-        const fallbackVariants =
-            speciesVariants.rose ??
-            FLOWER_SVGS.filter((svg) => svg.startsWith('rose-')) ??
-            FLOWER_SVGS;
-        let hiddenId = 0;
-        return assignedHiddenPoints.map((point, index) => {
-            const species = point.species ?? 'rose';
-            const variants = speciesVariants[species] ?? fallbackVariants;
-            return {
-                id: -++hiddenId,
-                x: point.x,
-                y: point.y,
-                svg: variants[index % variants.length] ?? variants[0],
-                scale: 1.05,
-                rotation: 0,
-                zIndex: 200 + point.row,
-                dayNumber: 0,
-                date: '2025-02-14',
-            } as FlowerData;
-        });
-    }, [assignedHiddenPoints, speciesVariants]);
 
     useEffect(() => {
         setSelectedFlower(null);
-    }, [isHiddenMessage]);
-
-    const renderFlowers = useMemo(
-        () => [...flowers, ...hiddenFlowers],
-        [flowers, hiddenFlowers],
-    );
+    }, [activeTextSet]);
     const newestFlowerId = flowers[flowers.length - 1]?.id ?? null;
     const isNight = timeOfDay === 'night';
     const isDusk = timeOfDay === 'dusk';
@@ -487,27 +404,28 @@ export default function Garden({
             </div>
 
             {/* Flowers */}
-            {renderFlowers.map((f) => {
+            {flowers.map((f) => {
                 const isSelected = selectedFlower?.id === f.id;
                 // Deterministic sway: use flower id to pick animation delay & duration
                 const swayDelay = (f.id * 0.37) % 4;
                 const swayDuration = 3 + (f.id % 5) * 0.5;
                 const typeName = f.svg.split('-')[0];
                 const isEnabled = typeVisibility[typeName] ?? true;
-                const isHiddenPixel = f.id < 0;
+                const isTextFlower = !!f.textSetId;
                 const isNewestFlower =
-                    !isHiddenPixel &&
                     newestFlowerId !== null &&
                     f.id === newestFlowerId;
                 const fadeByToggle = !isEnabled;
-                const fadeByReveal = isHiddenMessage && !isHiddenPixel;
+                const fadeByReveal =
+                    activeTextSet !== null &&
+                    (!isTextFlower || f.textSetId !== activeTextSet);
                 const shouldFade = fadeByToggle || fadeByReveal;
                 const filterParts: string[] = [];
                 if (isNight) filterParts.push('brightness(0.45) saturate(0.6)');
                 else if (isDusk) filterParts.push('brightness(0.75)');
                 const baseZIndex = isSelected
                     ? 100000
-                    : isHiddenPixel
+                    : isTextFlower
                       ? 200 + Math.round(f.zIndex * 10)
                       : f.id;
                 // const auraShadow = isNewestFlower
@@ -614,46 +532,64 @@ export default function Garden({
             <div className="pointer-events-none absolute bottom-4 right-4 z-[600000] flex flex-col items-end gap-3">
                 {isFilterOpen && (
                     <div className="filter-menu pointer-events-auto relative z-[610000] w-60 rounded-2xl border border-white/15 bg-zinc-900/95 p-3 text-white shadow-[0_20px_60px_rgba(0,0,0,0.45)] backdrop-blur-xl">
-                        <div className="mb-3 rounded-2xl bg-white/5 px-3 py-2">
-                            <div className="flex items-center justify-between text-sm font-semibold">
-                                <span>Hidden Message</span>
-                                <button
-                                    type="button"
-                                    className={`flex items-center gap-2 text-[11px] uppercase tracking-[0.3em] transition ${
-                                        isHiddenMessage
-                                            ? 'text-emerald-300'
-                                            : 'text-white/40'
-                                    }`}
-                                    aria-pressed={isHiddenMessage}
-                                    onClick={(event) => {
-                                        event.stopPropagation();
-                                        setIsHiddenMessage((prev) => !prev);
-                                    }}
-                                >
-                                    {isHiddenMessage ? 'On' : 'Off'}
-                                    <span
-                                        className={`inline-flex h-4 w-7 items-center rounded-full border border-white/20 px-0.5 transition ${
-                                            isHiddenMessage
-                                                ? 'bg-emerald-400/80'
-                                                : 'bg-zinc-700'
-                                        }`}
-                                    >
-                                        <span
-                                            className={`block h-3 w-3 rounded-full bg-white transition ${
-                                                isHiddenMessage
-                                                    ? 'translate-x-3'
-                                                    : 'translate-x-0'
-                                            }`}
-                                        />
-                                    </span>
-                                </button>
+                        {discoveredTextSets.length > 0 && (
+                            <div className="mb-3 rounded-2xl bg-white/5 px-3 py-2">
+                                <div className="mb-2 text-xs uppercase tracking-[0.2em] text-white/60">
+                                    Hidden Messages
+                                </div>
+                                <ul className="space-y-1">
+                                    {discoveredTextSets.map((ts) => {
+                                        const isActive =
+                                            activeTextSet === ts.id;
+                                        return (
+                                            <li key={ts.id}>
+                                                <button
+                                                    type="button"
+                                                    className="flex w-full items-center justify-between rounded-xl px-2 py-2 text-sm transition hover:bg-white/5"
+                                                    onClick={(event) => {
+                                                        event.stopPropagation();
+                                                        setActiveTextSet(
+                                                            (prev) =>
+                                                                prev === ts.id
+                                                                    ? null
+                                                                    : ts.id,
+                                                        );
+                                                    }}
+                                                >
+                                                    <span>{ts.label}</span>
+                                                    <span
+                                                        className={`flex items-center gap-2 text-[11px] uppercase tracking-[0.3em] ${
+                                                            isActive
+                                                                ? 'text-emerald-300'
+                                                                : 'text-white/40'
+                                                        }`}
+                                                    >
+                                                        {isActive
+                                                            ? 'On'
+                                                            : 'Off'}
+                                                        <span
+                                                            className={`inline-flex h-4 w-7 items-center rounded-full border border-white/20 px-0.5 transition ${
+                                                                isActive
+                                                                    ? 'bg-emerald-400/80'
+                                                                    : 'bg-zinc-700'
+                                                            }`}
+                                                        >
+                                                            <span
+                                                                className={`block h-3 w-3 rounded-full bg-white transition ${
+                                                                    isActive
+                                                                        ? 'translate-x-3'
+                                                                        : 'translate-x-0'
+                                                                }`}
+                                                            />
+                                                        </span>
+                                                    </span>
+                                                </button>
+                                            </li>
+                                        );
+                                    })}
+                                </ul>
                             </div>
-                            <p className="mt-1 text-[11px] text-white/60">
-                                if you give up trying to find the hidden
-                                message, you might as well just turn it on and
-                                see what it is 🤣
-                            </p>
-                        </div>
+                        )}
 
                         <div className="mb-2 flex items-center justify-between text-xs uppercase tracking-[0.2em] text-white/60">
                             <span>Flowers</span>
@@ -720,7 +656,7 @@ export default function Garden({
                 <button
                     type="button"
                     className={`pointer-events-auto flex h-11 w-11 items-center justify-center rounded-full text-sm font-semibold shadow-lg backdrop-blur focus-visible:outline focus-visible:outline-2 focus-visible:outline-white transition ${
-                        isHiddenMessage
+                        activeTextSet !== null
                             ? 'bg-emerald-400 text-emerald-950'
                             : 'bg-zinc-900/90 text-white'
                     }`}
