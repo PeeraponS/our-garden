@@ -1,8 +1,9 @@
 'use client';
 
 import { useState, useEffect, useCallback, useMemo } from 'react';
-import { FlowerData } from '@/lib/garden';
-import { TEXT_SETS } from '@/lib/gardenConfig';
+import { FlowerData, EmojiData } from '@/lib/garden';
+import { TEXT_SETS, ROTATING_COUNT } from '@/lib/gardenConfig';
+import { mulberry32 } from '@/lib/random';
 import { useAmbientAudio } from '@/lib/useAmbientAudio';
 
 // --- Time of day ---
@@ -187,9 +188,11 @@ const BASE_SPECIES = [
 export default function Garden({
     flowers,
     total,
+    emojis,
 }: {
     flowers: FlowerData[];
     total: number;
+    emojis: EmojiData[];
 }) {
     const [selectedFlower, setSelectedFlower] = useState<FlowerData | null>(
         null,
@@ -198,7 +201,19 @@ export default function Garden({
     const [particles, setParticles] = useState<Particle[]>([]);
     const [isFilterOpen, setIsFilterOpen] = useState(false);
     const [activeTextSet, setActiveTextSet] = useState<string | null>(null);
+    const [currentHour, setCurrentHour] = useState(() => new Date().getHours());
     useAmbientAudio(timeOfDay);
+
+    // Pick which rotating emojis are visible this hour
+    const visibleEmojis = useMemo(() => {
+        const always = emojis.filter((e) => e.alwaysShow);
+        const rotating = emojis.filter((e) => !e.alwaysShow);
+        if (rotating.length <= ROTATING_COUNT) return emojis;
+        // Use hour as seed to pick ROTATING_COUNT emojis
+        const rng = mulberry32(currentHour * 9973 + 42);
+        const shuffled = [...rotating].sort(() => rng() - 0.5);
+        return [...always, ...shuffled.slice(0, ROTATING_COUNT)];
+    }, [emojis, currentHour]);
 
     const availableSpecies = useMemo(() => {
         const set = new Set<string>(BASE_SPECIES);
@@ -234,9 +249,11 @@ export default function Garden({
 
     useEffect(() => {
         const update = () => {
-            const tod = getTimeOfDay(new Date().getHours());
+            const now = new Date();
+            const tod = getTimeOfDay(now.getHours());
             setTimeOfDay(tod);
             setParticles(generateParticles(tod));
+            setCurrentHour(now.getHours());
         };
         update();
         const id = setInterval(update, 60000);
@@ -402,6 +419,25 @@ export default function Garden({
                     ),
                 )}
             </div>
+
+            {/* Emojis */}
+            {visibleEmojis.map((e) => (
+                <div
+                    key={`emoji-${e.id}`}
+                    className="pointer-events-none absolute select-none"
+                    style={{
+                        left: `${e.x}%`,
+                        top: `${e.y}%`,
+                        transform: `translate(-50%, -50%) scale(${e.scale}) rotate(${e.rotation}deg)`,
+                        fontSize: 'clamp(18px, 4.5vw, 32px)',
+                        zIndex: e.zIndex,
+                        opacity: activeTextSet !== null ? 0.15 : 0.85,
+                        transition: 'opacity 0.35s ease',
+                    }}
+                >
+                    {e.emoji}
+                </div>
+            ))}
 
             {/* Flowers */}
             {flowers.map((f) => {

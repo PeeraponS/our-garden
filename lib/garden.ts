@@ -21,6 +21,42 @@ export interface FlowerData {
   textSetId?: string;
 }
 
+export interface EmojiData {
+  id: number;
+  emoji: string;
+  x: number;
+  y: number;
+  rotation: number;
+  scale: number;
+  zIndex: number;
+  alwaysShow: boolean;
+}
+
+const EMOJI_SEED = 8888;
+
+export function generateEmojis(
+  alwaysEmojis: string[],
+  rotatingEmojis: string[],
+): EmojiData[] {
+  const all = [...alwaysEmojis, ...rotatingEmojis];
+  if (!all.length) return [];
+  const rng = mulberry32(EMOJI_SEED);
+  const items: EmojiData[] = [];
+  for (let i = 0; i < all.length; i++) {
+    items.push({
+      id: i,
+      emoji: all[i],
+      alwaysShow: i < alwaysEmojis.length,
+      x: 2 + rng() * 96,
+      y: 2 + rng() * 96,
+      rotation: -45 + rng() * 90,
+      scale: 0.8 + rng() * 0.5,
+      zIndex: 150 + Math.floor(rng() * 50),
+    });
+  }
+  return items;
+}
+
 const COLS = 64;
 const ROWS = 56;
 const SEED = 20201027;

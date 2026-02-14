@@ -1,5 +1,5 @@
-import { generateGarden } from '@/lib/garden';
-import { TEXT_SETS } from '@/lib/gardenConfig';
+import { generateGarden, generateEmojis } from '@/lib/garden';
+import { TEXT_SETS, ALWAYS_EMOJIS, ROTATING_EMOJIS } from '@/lib/gardenConfig';
 import Garden from './components/Garden';
 
 export const dynamic = 'force-dynamic';
@@ -13,6 +13,7 @@ export default function Home() {
     );
     const count = Math.max(0, daysSinceStart);
     const flowers = generateGarden(count, TEXT_SETS);
+    const emojis = generateEmojis(ALWAYS_EMOJIS, ROTATING_EMOJIS);
 
-    return <Garden flowers={flowers} total={count} />;
+    return <Garden flowers={flowers} total={count} emojis={emojis} />;
 }

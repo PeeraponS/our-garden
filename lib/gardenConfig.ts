@@ -41,3 +41,7 @@ export const TEXT_SETS: TextSetConfig[] = [
         ],
     },
 ];
+
+export const ALWAYS_EMOJIS = ['💎', '🍒'];
+export const ROTATING_EMOJIS = ['🏸', '🐶', '🚗', '🍌', '🍐', '🍑', '🍟', '🐱'];
+export const ROTATING_COUNT = 3;
