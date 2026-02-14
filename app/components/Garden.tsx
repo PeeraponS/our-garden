@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { FlowerData } from '@/lib/garden';
 import { FLOWER_SVGS } from '@/lib/flowers';
 import {
@@ -50,30 +50,6 @@ const TINT_OVERLAY: Record<TimeOfDay, string> = {
     dusk: 'bg-black/10',
 };
 
-// --- Countdown ---
-function useCountdown(endDate: string, isPastValentine: boolean) {
-    const [now, setNow] = useState<Date | null>(null);
-
-    useEffect(() => {
-        setNow(new Date());
-        const id = setInterval(() => setNow(new Date()), 1000);
-        return () => clearInterval(id);
-    }, []);
-
-    if (!now || isPastValentine) return null;
-
-    const end = new Date(endDate).getTime();
-    const diff = end - now.getTime();
-    if (diff <= 0) return null;
-
-    const days = Math.floor(diff / (1000 * 60 * 60 * 24));
-    const hours = Math.floor((diff / (1000 * 60 * 60)) % 24);
-    const minutes = Math.floor((diff / (1000 * 60)) % 60);
-    const seconds = Math.floor((diff / 1000) % 60);
-
-    return { days, hours, minutes, seconds };
-}
-
 // --- Particles ---
 interface Particle {
     id: number;
@@ -82,27 +58,70 @@ interface Particle {
     size: number;
     duration: number;
     delay: number;
-    type: 'firefly' | 'petal' | 'sparkle';
+    type: 'firefly' | 'petal' | 'leaf' | 'butterfly';
     drift: number;
+    color?: string;
 }
+
+const BUTTERFLY_COLORS = [
+    ['#f9a8d4', '#f472b6'], // pink
+    ['#fde68a', '#f59e0b'], // yellow
+    ['#93c5fd', '#3b82f6'], // blue
+    ['#c4b5fd', '#8b5cf6'], // purple
+    ['#fdba74', '#f97316'], // orange
+    ['#86efac', '#22c55e'], // green
+];
 
 function generateParticles(timeOfDay: TimeOfDay): Particle[] {
     const particles: Particle[] = [];
     const isNighty =
         timeOfDay === 'night' || timeOfDay === 'dusk' || timeOfDay === 'dawn';
 
-    for (let i = 0; i < 20; i++) {
+    const count = isNighty ? 20 : 25;
+    for (let i = 0; i < count; i++) {
+        const type: Particle['type'] = isNighty
+            ? 'firefly'
+            : i % 3 === 0
+              ? 'leaf'
+              : 'petal';
         particles.push({
             id: i,
-            x: Math.random() * 100,
-            y: Math.random() * 100,
-            size: isNighty ? 2 + Math.random() * 3 : 4 + Math.random() * 5,
-            duration: 4 + Math.random() * 6,
-            delay: Math.random() * 5,
-            type: isNighty ? 'firefly' : i % 3 === 0 ? 'sparkle' : 'petal',
-            drift: -30 + Math.random() * 60,
+            x: -10 + Math.random() * 80,
+            y: -10 + Math.random() * 60,
+            size: isNighty
+                ? 2 + Math.random() * 3
+                : type === 'leaf'
+                  ? 12 + Math.random() * 10
+                  : 8 + Math.random() * 8,
+            duration: isNighty ? 4 + Math.random() * 6 : 7 + Math.random() * 6,
+            delay: Math.random() * 12,
+            type,
+            drift: 40 + Math.random() * 80,
         });
     }
+
+    // Add butterflies during daytime
+    if (!isNighty) {
+        const butterflyCount = 6 + Math.floor(Math.random() * 4);
+        for (let i = 0; i < butterflyCount; i++) {
+            const colorPair =
+                BUTTERFLY_COLORS[
+                    Math.floor(Math.random() * BUTTERFLY_COLORS.length)
+                ];
+            particles.push({
+                id: count + i,
+                x: 5 + Math.random() * 90,
+                y: 10 + Math.random() * 80,
+                size: 10 + Math.random() * 8,
+                duration: 12 + Math.random() * 10,
+                delay: Math.random() * 10,
+                type: 'butterfly',
+                drift: -60 + Math.random() * 120,
+                color: colorPair[0],
+            });
+        }
+    }
+
     return particles;
 }
 
@@ -180,13 +199,9 @@ const LINE_SPECIES: string[][] = [
 export default function Garden({
     flowers,
     total,
-    endDate,
-    isPastValentine,
 }: {
     flowers: FlowerData[];
     total: number;
-    endDate: string;
-    isPastValentine: boolean;
 }) {
     const [selectedFlower, setSelectedFlower] = useState<FlowerData | null>(
         null,
@@ -195,13 +210,7 @@ export default function Garden({
     const [particles, setParticles] = useState<Particle[]>([]);
     const [isFilterOpen, setIsFilterOpen] = useState(false);
     const [isHiddenMessage, setIsHiddenMessage] = useState(false);
-    const countdown = useCountdown(endDate, isPastValentine);
     useAmbientAudio(timeOfDay);
-    const isDev = process.env.NODE_ENV === 'development';
-    const [isCountdownHintVisible, setIsCountdownHintVisible] = useState(false);
-    const countdownHintTimeoutRef = useRef<ReturnType<
-        typeof setTimeout
-    > | null>(null);
 
     const speciesVariants = useMemo(() => {
         const map: Record<string, string[]> = {};
@@ -348,40 +357,6 @@ export default function Garden({
         () => [...flowers, ...hiddenFlowers],
         [flowers, hiddenFlowers],
     );
-    const isCountdownBlocking = Boolean(countdown) && !isDev;
-    const countdownLabel = useMemo(() => {
-        if (!countdown) return null;
-        const parts: string[] = [];
-        if (countdown.days > 0) parts.push(`${countdown.days}d`);
-        if (countdown.hours > 0 || parts.length)
-            parts.push(`${countdown.hours}h`);
-        parts.push(`${countdown.minutes}m`);
-        return parts.join(' ');
-    }, [countdown]);
-    const showCountdownHint = useCallback(() => {
-        if (!countdownLabel || !isCountdownBlocking) return;
-        setIsCountdownHintVisible(true);
-        if (countdownHintTimeoutRef.current) {
-            clearTimeout(countdownHintTimeoutRef.current);
-        }
-        countdownHintTimeoutRef.current = setTimeout(() => {
-            setIsCountdownHintVisible(false);
-        }, 2500);
-    }, [countdownLabel, isCountdownBlocking]);
-
-    useEffect(() => {
-        return () => {
-            if (countdownHintTimeoutRef.current) {
-                clearTimeout(countdownHintTimeoutRef.current);
-            }
-        };
-    }, []);
-
-    useEffect(() => {
-        if (!isCountdownBlocking && isCountdownHintVisible) {
-            setIsCountdownHintVisible(false);
-        }
-    }, [isCountdownBlocking, isCountdownHintVisible]);
     const newestFlowerId = flowers[flowers.length - 1]?.id ?? null;
     const isNight = timeOfDay === 'night';
     const isDusk = timeOfDay === 'dusk';
@@ -434,35 +409,81 @@ export default function Garden({
             )}
 
             {/* Floating particles */}
-            <div className="pointer-events-none absolute inset-0 z-[2]">
-                {particles.map((p) => (
-                    <div
-                        key={`particle-${p.id}`}
-                        className={
-                            p.type === 'firefly'
-                                ? 'absolute rounded-full bg-yellow-200 shadow-[0_0_6px_2px_rgba(253,230,138,0.5)] animate-firefly'
-                                : p.type === 'sparkle'
-                                  ? 'absolute rounded-full bg-white/40 animate-sparkle'
-                                  : 'absolute animate-petal'
-                        }
-                        style={{
-                            left: `${p.x}%`,
-                            top: `${p.y}%`,
-                            width: p.size,
-                            height: p.size,
-                            animationDuration: `${p.duration}s`,
-                            animationDelay: `${p.delay}s`,
-                            ['--drift' as string]: `${p.drift}px`,
-                            ...(p.type === 'petal'
-                                ? {
-                                      background:
-                                          'radial-gradient(ellipse, rgba(255,200,210,0.5), rgba(255,160,180,0.15))',
-                                      borderRadius: '50% 0 50% 0',
-                                  }
-                                : {}),
-                        }}
-                    />
-                ))}
+            <div className="pointer-events-none absolute inset-0 overflow-hidden z-[5000]">
+                {particles.map((p) =>
+                    p.type === 'butterfly' ? (
+                        <div
+                            key={`particle-${p.id}`}
+                            className="absolute animate-flutter"
+                            style={{
+                                left: `${p.x}%`,
+                                top: `${p.y}%`,
+                                width: p.size,
+                                height: p.size,
+                                animationDuration: `${p.duration}s`,
+                                animationDelay: `${p.delay}s`,
+                                ['--drift' as string]: `${p.drift}px`,
+                            }}
+                        >
+                            {/* Left wing */}
+                            <span
+                                className="absolute top-0 left-0 animate-wing-left"
+                                style={{
+                                    width: '50%',
+                                    height: '100%',
+                                    background: p.color,
+                                    borderRadius: '50% 0 50% 50%',
+                                    opacity: 0.85,
+                                    transformOrigin: 'right center',
+                                }}
+                            />
+                            {/* Right wing */}
+                            <span
+                                className="absolute top-0 right-0 animate-wing-right"
+                                style={{
+                                    width: '50%',
+                                    height: '100%',
+                                    background: p.color,
+                                    borderRadius: '0 50% 50% 50%',
+                                    opacity: 0.85,
+                                    transformOrigin: 'left center',
+                                }}
+                            />
+                        </div>
+                    ) : (
+                        <div
+                            key={`particle-${p.id}`}
+                            className={
+                                p.type === 'firefly'
+                                    ? 'absolute rounded-full bg-yellow-200 shadow-[0_0_6px_2px_rgba(253,230,138,0.5)] animate-firefly'
+                                    : 'absolute animate-blow'
+                            }
+                            style={{
+                                left: `${p.x}%`,
+                                top: `${p.y}%`,
+                                width: p.size,
+                                height: p.size,
+                                animationDuration: `${p.duration}s`,
+                                animationDelay: `${p.delay}s`,
+                                ['--drift' as string]: `${p.drift}px`,
+                                ...(p.type === 'petal'
+                                    ? {
+                                          background:
+                                              'radial-gradient(ellipse, rgba(255,180,195,0.85), rgba(255,140,165,0.5))',
+                                          borderRadius: '50% 0 50% 0',
+                                      }
+                                    : {}),
+                                ...(p.type === 'leaf'
+                                    ? {
+                                          background:
+                                              'linear-gradient(135deg, rgba(100,170,60,0.85), rgba(60,130,30,0.6))',
+                                          borderRadius: '40% 0 60% 0',
+                                      }
+                                    : {}),
+                            }}
+                        />
+                    ),
+                )}
             </div>
 
             {/* Flowers */}
@@ -484,49 +505,85 @@ export default function Garden({
                 const filterParts: string[] = [];
                 if (isNight) filterParts.push('brightness(0.45) saturate(0.6)');
                 else if (isDusk) filterParts.push('brightness(0.75)');
-                const chronologicalLayer = Math.max(0, f.id);
-                const depthLayer = Math.round(f.zIndex * 10);
                 const baseZIndex = isSelected
-                    ? 1000
-                    : depthLayer * 100 + chronologicalLayer;
-                const auraShadow = isNewestFlower
-                    ? '0 0 18px rgba(255,255,255,0.85), 0 0 36px rgba(255,200,220,0.7)'
-                    : 'none';
+                    ? 100000
+                    : isHiddenPixel
+                      ? 200 + Math.round(f.zIndex * 10)
+                      : f.id;
+                // const auraShadow = isNewestFlower
+                //     ? '0 0 20px rgba(255,255,255,0.95), 0 0 40px rgba(255,180,200,0.8), 0 0 60px rgba(255,150,180,0.4)'
+                //     : 'none';
 
                 return (
-                    <button
-                        key={f.id}
-                        onClick={() => handleFlowerClick(f)}
-                        className={`absolute border-0 bg-transparent p-0 cursor-pointer ${
-                            isNewestFlower ? 'animate-newest' : 'animate-sway'
-                        }`}
-                        style={{
-                            left: `${f.x}%`,
-                            top: `${f.y}%`,
-                            width: FLOWER_SIZE,
-                            height: FLOWER_SIZE,
-                            transform: `translate(-50%, -50%) scale(${isSelected ? f.scale * 2.2 : f.scale}) rotate(${f.rotation}deg)`,
-                            zIndex: baseZIndex,
-                            filter: filterParts.length
-                                ? filterParts.join(' ')
-                                : 'none',
-                            transition:
-                                'left 0.4s ease, top 0.4s ease, transform 0.3s ease, filter 0.35s ease, opacity 0.35s ease, box-shadow 0.45s ease',
-                            opacity: shouldFade ? 0.15 : 1,
-                            pointerEvents: fadeByToggle ? 'none' : 'auto',
-                            animationDelay: `${swayDelay}s`,
-                            animationDuration: `${swayDuration}s`,
-                            boxShadow: auraShadow,
-                        }}
-                    >
-                        <img
-                            src={`/flowers/${f.svg}`}
-                            alt=""
-                            draggable={false}
-                            className="h-full w-full"
-                            style={{ pointerEvents: 'none' }}
-                        />
-                    </button>
+                    <div key={f.id} className="absolute" style={{
+                        left: `${f.x}%`,
+                        top: `${f.y}%`,
+                        zIndex: baseZIndex,
+                    }}>
+                        {/* Pulsing ring beacon for newest flower */}
+                        {/* {isNewestFlower && !shouldFade && (
+                            <>
+                                <div
+                                    className="pointer-events-none absolute animate-ping-ring"
+                                    style={{
+                                        width: 'clamp(50px, 12vw, 90px)',
+                                        height: 'clamp(50px, 12vw, 90px)',
+                                        transform: 'translate(-50%, -50%)',
+                                        borderRadius: '50%',
+                                        border: '2px solid rgba(255, 255, 255, 0.7)',
+                                    }}
+                                />
+                                <div
+                                    className="pointer-events-none absolute animate-ping-ring"
+                                    style={{
+                                        width: 'clamp(50px, 12vw, 90px)',
+                                        height: 'clamp(50px, 12vw, 90px)',
+                                        transform: 'translate(-50%, -50%)',
+                                        borderRadius: '50%',
+                                        border: '2px solid rgba(255, 180, 200, 0.6)',
+                                        animationDelay: '1s',
+                                    }}
+                                />
+                                <div
+                                    className="pointer-events-none absolute animate-newest-glow"
+                                    style={{
+                                        width: 'clamp(40px, 10vw, 70px)',
+                                        height: 'clamp(40px, 10vw, 70px)',
+                                        transform: 'translate(-50%, -50%)',
+                                        borderRadius: '50%',
+                                        background: 'radial-gradient(circle, rgba(255,255,255,0.4) 0%, rgba(255,200,220,0.2) 40%, transparent 70%)',
+                                    }}
+                                />
+                            </>
+                        )} */}
+                        <button
+                            onClick={() => handleFlowerClick(f)}
+                            className="absolute border-0 bg-transparent p-0 cursor-pointer animate-sway"
+                            style={{
+                                width: FLOWER_SIZE,
+                                height: FLOWER_SIZE,
+                                transform: `translate(-50%, -50%) scale(${isSelected ? f.scale * 2.2 : f.scale}) rotate(${f.rotation}deg)`,
+                                filter: filterParts.length
+                                    ? filterParts.join(' ')
+                                    : 'none',
+                                transition:
+                                    'transform 0.3s ease, filter 0.35s ease, opacity 0.35s ease, box-shadow 0.45s ease',
+                                opacity: shouldFade ? 0.15 : 1,
+                                pointerEvents: fadeByToggle ? 'none' : 'auto',
+                                animationDelay: `${swayDelay}s`,
+                                animationDuration: `${swayDuration}s`,
+                                boxShadow: 'none',
+                            }}
+                        >
+                            <img
+                                src={`/flowers/${f.svg}`}
+                                alt=""
+                                draggable={false}
+                                className="h-full w-full"
+                                style={{ pointerEvents: 'none' }}
+                            />
+                        </button>
+                    </div>
                 );
             })}
 
@@ -551,11 +608,7 @@ export default function Garden({
                 </div>
             )}
 
-            <FloatingPanel
-                total={total}
-                isPastValentine={isPastValentine}
-                countdown={countdown}
-            />
+            <FloatingPanel total={total} />
 
             {/* Flower type filter */}
             <div className="pointer-events-none absolute bottom-4 right-4 z-[600000] flex flex-col items-end gap-3">
@@ -664,29 +717,17 @@ export default function Garden({
                     </div>
                 )}
 
-                {isCountdownBlocking &&
-                    countdownLabel &&
-                    isCountdownHintVisible && (
-                        <div className="pointer-events-auto rounded-full bg-black/70 px-3 py-1 text-[11px] uppercase tracking-[0.2em] text-white/80 shadow-lg">
-                            {countdownLabel}
-                        </div>
-                    )}
                 <button
                     type="button"
                     className={`pointer-events-auto flex h-11 w-11 items-center justify-center rounded-full text-sm font-semibold shadow-lg backdrop-blur focus-visible:outline focus-visible:outline-2 focus-visible:outline-white transition ${
                         isHiddenMessage
                             ? 'bg-emerald-400 text-emerald-950'
                             : 'bg-zinc-900/90 text-white'
-                    } ${isCountdownBlocking ? 'cursor-not-allowed opacity-60' : ''}`}
+                    }`}
                     aria-label="Toggle flower filter menu"
                     aria-expanded={isFilterOpen}
-                    aria-disabled={isCountdownBlocking}
                     onClick={(event) => {
                         event.stopPropagation();
-                        if (isCountdownBlocking) {
-                            showCountdownHint();
-                            return;
-                        }
                         setIsFilterOpen((prev) => !prev);
                     }}
                 >
@@ -697,15 +738,7 @@ export default function Garden({
     );
 }
 
-function FloatingPanel({
-    total,
-    isPastValentine,
-    countdown,
-}: {
-    total: number;
-    isPastValentine: boolean;
-    countdown: ReturnType<typeof useCountdown>;
-}) {
+function FloatingPanel({ total }: { total: number }) {
     const [isHidden, setIsHidden] = useState(false);
 
     if (isHidden) {
@@ -727,39 +760,9 @@ function FloatingPanel({
                     {total.toLocaleString()} flowers planted
                 </p>
 
-                {countdown && (
-                    <div className="mt-3 border-t border-white/20 pt-3">
-                        <p className="mb-1.5 text-[2.5vw] uppercase tracking-widest text-slate-500 min-[390px]:text-[10px] md:text-xs">
-                            Valentine&apos;s Day
-                        </p>
-                        <div className="flex items-center justify-center gap-3 md:gap-4">
-                            {[
-                                { value: countdown.days, label: 'days' },
-                                { value: countdown.hours, label: 'hrs' },
-                                { value: countdown.minutes, label: 'min' },
-                                { value: countdown.seconds, label: 'sec' },
-                            ].map((item) => (
-                                <div
-                                    key={item.label}
-                                    className="flex flex-col items-center"
-                                >
-                                    <span className="font-mono text-[5vw] font-bold tabular-nums text-slate-900 min-[390px]:text-xl md:text-3xl">
-                                        {String(item.value).padStart(2, '0')}
-                                    </span>
-                                    <span className="text-[2vw] uppercase text-slate-400 min-[390px]:text-[9px] md:text-[11px]">
-                                        {item.label}
-                                    </span>
-                                </div>
-                            ))}
-                        </div>
-                    </div>
-                )}
-
-                {isPastValentine && (
-                    <p className="mt-3 border-t border-white/20 pt-3 text-[3.5vw] text-rose-300 font-semibold min-[390px]:text-sm md:text-lg">
-                        Happy Valentine&apos;s Day
-                    </p>
-                )}
+                <p className="mt-3 border-t border-white/20 pt-3 text-[3.5vw] text-rose-300 font-semibold min-[390px]:text-sm md:text-lg">
+                    Happy Valentine&apos;s Day
+                </p>
 
                 <p className="mt-3 text-[2.5vw] uppercase tracking-widest text-slate-400 min-[390px]:text-[10px] md:text-xs">
                     Tap to hide — refresh to show again

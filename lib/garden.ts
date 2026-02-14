@@ -44,7 +44,7 @@ export function generateGarden(count: number): FlowerData[] {
     const rotation = -15 + rng() * 30;
     const zIndex = Math.floor(y);
 
-    const date = new Date("2020-10-27");
+    const date = new Date("2017-10-27");
     date.setDate(date.getDate() + i);
     const dateStr = date.toISOString().split("T")[0];
 
