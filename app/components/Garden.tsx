@@ -82,8 +82,8 @@ function generateParticles(timeOfDay: TimeOfDay): Particle[] {
               : 'petal';
         particles.push({
             id: i,
-            x: -10 + Math.random() * 80,
-            y: -10 + Math.random() * 60,
+            x: -10 + Math.random() * 110,
+            y: -10 + Math.random() * 110,
             size: isNighty
                 ? 2 + Math.random() * 3
                 : type === 'leaf'
