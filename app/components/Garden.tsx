@@ -558,9 +558,9 @@ export default function Garden({
             />
 
             {/* Flower type filter */}
-            <div className="pointer-events-none absolute bottom-4 right-4 z-[200000] flex flex-col items-end gap-3">
+            <div className="pointer-events-none absolute bottom-4 right-4 z-[600000] flex flex-col items-end gap-3">
                 {isFilterOpen && (
-                    <div className="filter-menu pointer-events-auto w-60 rounded-2xl bg-zinc-900/90 p-3 text-white shadow-2xl backdrop-blur">
+                    <div className="filter-menu pointer-events-auto relative z-[610000] w-60 rounded-2xl border border-white/15 bg-zinc-900/95 p-3 text-white shadow-[0_20px_60px_rgba(0,0,0,0.45)] backdrop-blur-xl">
                         <div className="mb-3 rounded-2xl bg-white/5 px-3 py-2">
                             <div className="flex items-center justify-between text-sm font-semibold">
                                 <span>Hidden Message</span>
