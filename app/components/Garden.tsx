@@ -474,23 +474,31 @@ export default function Garden({
                 const typeName = f.svg.split('-')[0];
                 const isEnabled = typeVisibility[typeName] ?? true;
                 const isHiddenPixel = f.id < 0;
+                const isNewestFlower =
+                    !isHiddenPixel &&
+                    newestFlowerId !== null &&
+                    f.id === newestFlowerId;
                 const fadeByToggle = !isEnabled;
                 const fadeByReveal = isHiddenMessage && !isHiddenPixel;
                 const shouldFade = fadeByToggle || fadeByReveal;
                 const filterParts: string[] = [];
                 if (isNight) filterParts.push('brightness(0.45) saturate(0.6)');
                 else if (isDusk) filterParts.push('brightness(0.75)');
+                const chronologicalLayer = Math.max(0, f.id);
+                const depthLayer = Math.round(f.zIndex * 10);
+                const baseZIndex = isSelected
+                    ? 1000
+                    : depthLayer * 100 + chronologicalLayer;
+                const auraShadow = isNewestFlower
+                    ? '0 0 18px rgba(255,255,255,0.85), 0 0 36px rgba(255,200,220,0.7)'
+                    : 'none';
 
                 return (
                     <button
                         key={f.id}
                         onClick={() => handleFlowerClick(f)}
                         className={`absolute border-0 bg-transparent p-0 cursor-pointer ${
-                            !isHiddenPixel &&
-                            newestFlowerId !== null &&
-                            f.id === newestFlowerId
-                                ? 'animate-newest'
-                                : 'animate-sway'
+                            isNewestFlower ? 'animate-newest' : 'animate-sway'
                         }`}
                         style={{
                             left: `${f.x}%`,
@@ -498,16 +506,17 @@ export default function Garden({
                             width: FLOWER_SIZE,
                             height: FLOWER_SIZE,
                             transform: `translate(-50%, -50%) scale(${isSelected ? f.scale * 2.2 : f.scale}) rotate(${f.rotation}deg)`,
-                            zIndex: isSelected ? 1000 : f.zIndex,
+                            zIndex: baseZIndex,
                             filter: filterParts.length
                                 ? filterParts.join(' ')
                                 : 'none',
                             transition:
-                                'left 0.4s ease, top 0.4s ease, transform 0.3s ease, filter 0.35s ease, opacity 0.35s ease',
+                                'left 0.4s ease, top 0.4s ease, transform 0.3s ease, filter 0.35s ease, opacity 0.35s ease, box-shadow 0.45s ease',
                             opacity: shouldFade ? 0.15 : 1,
                             pointerEvents: fadeByToggle ? 'none' : 'auto',
                             animationDelay: `${swayDelay}s`,
                             animationDuration: `${swayDuration}s`,
+                            boxShadow: auraShadow,
                         }}
                     >
                         <img
@@ -524,7 +533,7 @@ export default function Garden({
             {/* Flower tooltip */}
             {selectedFlower && (
                 <div
-                    className="pointer-events-none absolute z-[1001] animate-fade-in"
+                    className="pointer-events-none absolute z-[400000] animate-fade-in"
                     style={{
                         left: `${Math.min(Math.max(selectedFlower.x, 12), 88)}%`,
                         top: `${selectedFlower.y}%`,
@@ -549,7 +558,7 @@ export default function Garden({
             />
 
             {/* Flower type filter */}
-            <div className="pointer-events-none absolute bottom-4 right-4 z-[1002] flex flex-col items-end gap-3">
+            <div className="pointer-events-none absolute bottom-4 right-4 z-[200000] flex flex-col items-end gap-3">
                 {isFilterOpen && (
                     <div className="filter-menu pointer-events-auto w-60 rounded-2xl bg-zinc-900/90 p-3 text-white shadow-2xl backdrop-blur">
                         <div className="mb-3 rounded-2xl bg-white/5 px-3 py-2">
@@ -704,23 +713,23 @@ function FloatingPanel({
     }
 
     return (
-        <div className="pointer-events-none absolute inset-0 z-[999] flex items-center justify-center">
+        <div className="pointer-events-none absolute inset-0 z-[300000] flex items-center justify-center">
             <button
                 type="button"
-                className="pointer-events-auto w-[80vw] max-w-[300px] rounded-2xl bg-white/30 px-5 py-4 text-center text-white shadow-xl backdrop-blur-md transition hover:bg-white/40 focus-visible:outline focus-visible:outline-2 focus-visible:outline-white/70 min-[390px]:w-[300px] md:max-w-[380px] md:px-10 md:py-7"
+                className="pointer-events-auto w-[80vw] max-w-[300px] rounded-2xl bg-white/30 px-5 py-4 text-center text-white shadow-xl backdrop-blur-lg transition hover:bg-white/40 focus-visible:outline focus-visible:outline-2 focus-visible:outline-white/70 min-[390px]:w-[300px] md:max-w-[380px] md:px-10 md:py-7"
                 onClick={() => setIsHidden(true)}
                 aria-label="Hide Our Garden panel"
             >
-                <h1 className="font-sans text-[7vw] font-bold leading-tight tracking-tight text-white drop-shadow-lg min-[390px]:text-3xl md:text-5xl">
+                <h1 className="font-sans text-[7vw] font-bold leading-tight tracking-tight text-slate-700 min-[390px]:text-3xl md:text-5xl">
                     Our Garden
                 </h1>
-                <p className="mt-1 text-[3.5vw] text-white/80 drop-shadow min-[390px]:text-sm md:mt-2 md:text-xl">
+                <p className="mt-1 text-[3.5vw] text-slate-600 min-[390px]:text-sm md:mt-2 md:text-xl">
                     {total.toLocaleString()} flowers planted
                 </p>
 
                 {countdown && (
                     <div className="mt-3 border-t border-white/20 pt-3">
-                        <p className="mb-1.5 text-[2.5vw] uppercase tracking-widest text-white/60 min-[390px]:text-[10px] md:text-xs">
+                        <p className="mb-1.5 text-[2.5vw] uppercase tracking-widest text-slate-500 min-[390px]:text-[10px] md:text-xs">
                             Valentine&apos;s Day
                         </p>
                         <div className="flex items-center justify-center gap-3 md:gap-4">
@@ -734,10 +743,10 @@ function FloatingPanel({
                                     key={item.label}
                                     className="flex flex-col items-center"
                                 >
-                                    <span className="font-mono text-[5vw] font-bold tabular-nums text-white min-[390px]:text-xl md:text-3xl">
+                                    <span className="font-mono text-[5vw] font-bold tabular-nums text-slate-900 min-[390px]:text-xl md:text-3xl">
                                         {String(item.value).padStart(2, '0')}
                                     </span>
-                                    <span className="text-[2vw] uppercase text-white/50 min-[390px]:text-[9px] md:text-[11px]">
+                                    <span className="text-[2vw] uppercase text-slate-400 min-[390px]:text-[9px] md:text-[11px]">
                                         {item.label}
                                     </span>
                                 </div>
@@ -747,12 +756,12 @@ function FloatingPanel({
                 )}
 
                 {isPastValentine && (
-                    <p className="mt-3 border-t border-white/20 pt-3 text-[3.5vw] text-pink-200 min-[390px]:text-sm md:text-lg">
+                    <p className="mt-3 border-t border-white/20 pt-3 text-[3.5vw] text-rose-300 font-semibold min-[390px]:text-sm md:text-lg">
                         Happy Valentine&apos;s Day
                     </p>
                 )}
 
-                <p className="mt-3 text-[2.5vw] uppercase tracking-widest text-white/60 min-[390px]:text-[10px] md:text-xs">
+                <p className="mt-3 text-[2.5vw] uppercase tracking-widest text-slate-400 min-[390px]:text-[10px] md:text-xs">
                     Tap to hide — refresh to show again
                 </p>
             </button>
