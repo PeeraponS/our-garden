@@ -36,7 +36,7 @@ export const TEXT_SETS: TextSetConfig[] = [
         },
         lineSpecies: [
             ['peony', 'lily', 'forgetmenot', 'rose'],
-            ['forgetmenot', 'rose', 'sunflower', 'tulip'],
+            ['forgetmenot', 'rose', 'tulip'],
             ['tulip', 'lily', 'forgetmenot'],
         ],
     },

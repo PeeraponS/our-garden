@@ -172,9 +172,7 @@ export function assignSpeciesToPoints(
   enabledSpecies: string[],
   lineSpecies: string[][],
 ): SpawnPoint[] {
-  const basePool = enabledSpecies.length ? enabledSpecies : DEFAULT_SPECIES;
-  const sanitizedFallback = basePool.filter((species) => species !== "sunflower");
-  const fallbackPool = sanitizedFallback.length ? sanitizedFallback : basePool;
+  const fallbackPool = enabledSpecies.length ? enabledSpecies : DEFAULT_SPECIES;
   if (!fallbackPool.length) return points;
 
   const letterCounters = new Map<number, number>();
@@ -188,7 +186,6 @@ export function assignSpeciesToPoints(
     const meta = maskResult.letterMeta[point.letterIndex];
     const lineList = meta ? lineSpecies[meta.lineIndex] ?? fallbackPool : fallbackPool;
     const filteredList = lineList
-      .filter((species) => species !== "sunflower")
       .filter((species) => fallbackPool.includes(species));
     const activePool = filteredList.length ? filteredList : fallbackPool;
 
